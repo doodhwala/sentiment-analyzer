@@ -1,5 +1,7 @@
 import numpy as np
 import csv
+import sys
+
 from gensim.models import Word2Vec
 
 model = Word2Vec.load('model')
@@ -15,10 +17,12 @@ class RNN:
 		self.direction = direction
 		self.hidden_size = hidden_size 
 		self.learning_rate = learning_rate
+		self.f = np.tanh
+		self.f_prime = lambda x: 1 - (x ** 2)
 
-		self.Wxh = np.random.randn(hidden_size, input_size) * 0.01 
-		self.Whh = np.random.randn(hidden_size, hidden_size) * 0.01
-		self.Why = np.random.randn(output_size, hidden_size) * 0.01 
+		self.Wxh = np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / (hidden_size + input_size))
+		self.Whh = np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / (hidden_size * 2))
+		self.Why = np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / (hidden_size + output_size))
 		self.bh = np.zeros((hidden_size, 1)) 
 		self.by = np.zeros((output_size, 1)) # output bias - computed but not used
 
@@ -34,8 +38,8 @@ class RNN:
 
 		for t in range(len(inputs)):
 			xs[t] = inputs[t].reshape(-1, 1)
-			hs[t] = np.tanh(np.dot(self.Wxh, xs[t]) + np.dot(self.Whh, hs[t-1]) + self.bh) 
-			ys[t] = np.tanh(np.dot(self.Why, hs[t]) + self.by)
+			hs[t] = self.f(np.dot(self.Wxh, xs[t]) + np.dot(self.Whh, hs[t-1]) + self.bh) 
+			ys[t] = self.f(np.dot(self.Why, hs[t]) + self.by)
 			ps[t] = np.exp(ys[t]) / np.sum(np.exp(ys[t]))
 		return xs, hs, ys, ps
 
@@ -47,8 +51,7 @@ class RNN:
 		dbh, dby = np.zeros_like(self.bh), np.zeros_like(self.by)
 		dhnext = np.zeros_like(hs[-1])
 		for t in reversed(range(len(xs))):
-			tmp = dy[t] * (1 - ys[t] ** 2)
-			#tmp = dy[t] * relu_prime(ys[t])
+			tmp = dy[t] * self.f_prime(ys[t])
 			dWhy += np.dot(tmp, hs[t].T)
 			dby += tmp
 			dh = np.dot(self.Why.T, dy[t]) + dhnext
@@ -85,9 +88,7 @@ class BiDirectionalRNN:
 
 	def forward(self, x):
 		seq_length = len(x)
-		if seq_length == 0:
-			return 2
-			# make it decent
+
 		y_pred = []
 		dby = np.zeros_like(self.by)
 		xsl, hsl, ysl, psl = self.left.forward(x, np.zeros((self.hidden_size, 1)))
@@ -96,6 +97,7 @@ class BiDirectionalRNN:
 		for ind in range(seq_length):
 			this_y = np.dot(self.right.Why, hsr[ind]) + np.dot(self.left.Why, hsl[ind]) + self.by
 			y_pred.append(this_y)
+		
 		return np.argmax(y_pred[-1])
 
 	def train(self, inputs, targets, epochs=5):
@@ -105,8 +107,7 @@ class BiDirectionalRNN:
 			for x, y in zip(inputs, targets):
 				hprevr = np.zeros((self.hidden_size, 1))
 				hprevl = np.zeros((self.hidden_size, 1))
-					
-				
+									
 				seq_length = len(x)
 
 				xsl, hsl, ysl, psl = self.left.forward(x, hprevl)
@@ -143,10 +144,12 @@ class BiDirectionalRNN:
 
 	def predict(self, inputs, targets):
 		correct = 0
-		predictions = {x:0 for x in range(3)}
-		outputs = {x:0 for x in range(3)}
+		predictions = {x : 0 for x in range(3)}
+		outputs = {x : 0 for x in range(3)}
 		for x, y in zip(inputs, targets):
-			# ip = [np.argmax(i) for i in x]
+			if len(x) == 0: 
+				continue
+
 			op = self.forward(x)
 			tr = np.argmax(y)
 			# I have changed this
@@ -158,14 +161,6 @@ class BiDirectionalRNN:
 		print 'Predictions:', predictions
 		return (correct + 0.0) / len(inputs)
 
-def three(x):
-	if(x < 2):
-		return 0
-	elif(x > 2):
-		return 2
-	else:
-		return 1
-
 def load_data(filename):
 	i = 0
 	with open(filename, 'r') as f:
@@ -176,46 +171,51 @@ def load_data(filename):
 			inputs.append(row[0])
 			outputs.append(int(row[1]))
 			i += 1
-			if i == 2500:
+			if i == 25000:
 				break
 		return inputs, outputs
 
 def w2v(sentence):
 	words = []
-	for word in sentence:
+	for word in sentence.split():
 		try:
 			words.append(model[word])
-		except Exception as e:
+		except Exception:
 			pass
-	# print sentence
-	# print words
+
 	return np.array(words)
 
-# OUTPUT_SIZE
-def ohv(x):
+def one_hot(x):
+	def three(x):
+		if x < 2:
+			return 0
+		
+		elif x > 2:
+			return 2
+		
+		else:
+			return 1
+		
 	v = np.zeros(3)
 	v[three(x)] = 1
 	return v
 
 if __name__ == "__main__":
-	INPUT_SIZE = 32
-	HIDDEN_SIZE = 16
+	INPUT_SIZE = 64
+	HIDDEN_SIZE = 256
 	OUTPUT_SIZE = 3
 	
 	training_inputs, training_targets =  load_data('train.csv')
 	testing_inputs, testing_targets =  load_data('test.csv')
-	for i in range(len(training_inputs)):
-		training_inputs[i] = w2v(training_inputs[i])
-	for i in range(len(training_targets)):
-		training_targets[i] = ohv(training_targets[i])
-	for i in range(len(testing_inputs)):
-		testing_inputs[i] = w2v(testing_inputs[i])
-	for i in range(len(testing_targets)):
-		testing_targets[i] = ohv(testing_targets[i])
 
+	training_inputs = np.array([ w2v(i) for i in training_inputs ])
+	training_targets = np.array( [one_hot(i) for i in  training_targets] )
 
-	EPOCHS = 10
-	LEARNING_RATE = 0.33
+	testing_inputs = np.array([ w2v(i) for i in testing_inputs ])
+	testing_targets = np.array( [one_hot(i) for i in  testing_targets] )
+
+	EPOCHS = 5
+	LEARNING_RATE = 0.2
 
 	BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
 
@@ -225,11 +225,8 @@ if __name__ == "__main__":
 
 	print("Accuracy: {}%".format(accuracy * 100))
 
+
+
 '''
 
-three_way_ip = np.array([three(x) for x in ip])
-three_way_op = np.array([three(x) for x in op])
-just need to change output size
-
-Create two BiDiRNNs
 '''
