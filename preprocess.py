@@ -24,7 +24,7 @@ def clean(sentence):
 	return sentence
 
 def create_csv():
-	f = open('train_sentence.txt', 'w')
+	f = open('train_word2vec.txt', 'w')
 
 	for i in datatype:
 		csvfile = open(i + '.csv', 'wb')
@@ -34,8 +34,7 @@ def create_csv():
 			sentence_list = []
 			sentiment_list = []
 
-			if i == "train":
-				span_sentence = True
+			span_sentence = True
 		
 			# extract spans from the tree
 			for label, sentence in example.to_labeled_lines():
@@ -57,12 +56,12 @@ def create_csv():
 
 
 def create_model():
-	f = open('train_sentence.txt', 'r')
+	f = open('train_word2vec.txt', 'r')
 	lines = f.read().split('\n')
 	sentences = []
 	for i in lines:
 		sentences.append(i.split())
-	model = Word2Vec(sentences, window=10, size=64, iter=100, min_count=1)
+	model = Word2Vec(sentences, window=5, size=64, iter=100, min_count=1)
 	model.save('model')
 	f.close()
 

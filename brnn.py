@@ -14,7 +14,7 @@ def relu_prime(z):
 	return (z > 0)
 
 def clip(size):
-		return min(size, 15)
+		return min(size, 10)
 
 class RNN:
 	def __init__(self, input_size, hidden_size, output_size, learning_rate=0.01, direction="right"):
@@ -113,7 +113,9 @@ class BiDirectionalRNN:
 		for e in range(epochs):
 			print('Epoch {}'.format(e + 1))
 
+			i = 0
 			for x, y in zip(*training_data):
+				i += 1
 				hprevr = np.zeros((self.hidden_size, 1))
 				hprevl = np.zeros((self.hidden_size, 1))
 									
@@ -159,9 +161,6 @@ class BiDirectionalRNN:
 		outputs = {x : 0 for x in range(5)}
 		l = 0
 		for x, y in zip(*testing_data):
-			if len(x) == 0:
-				continue
-
 			op = self.forward(x)
 			tr = np.argmax(y)
 			predictions[op] += 1
@@ -205,10 +204,10 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 20000
+	DATA_SIZE = 1000
 
 	INPUT_SIZE = 64
-	HIDDEN_SIZE = 256
+	HIDDEN_SIZE = 32
 	OUTPUT_SIZE = 5
 	
 	train_size = DATA_SIZE * 0.8
@@ -228,7 +227,7 @@ if __name__ == "__main__":
 	testing_inputs = np.array([ w2v(i) for i in testing_inputs ])
 	testing_targets = np.array( [one_hot(i) for i in  testing_targets] )
 
-	EPOCHS = 6
+	EPOCHS = 5
 	LEARNING_RATE = 0.20
 
 	BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
