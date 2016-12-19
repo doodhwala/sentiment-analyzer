@@ -1,6 +1,7 @@
 import numpy as np
 import csv
 import sys
+import pprint
 
 from gensim.models import Word2Vec
 
@@ -11,6 +12,9 @@ def relu(z):
 
 def relu_prime(z):
 	return (z > 0)
+
+def clip(size):
+		return min(size, 15)
 
 class RNN:
 	def __init__(self, input_size, hidden_size, output_size, learning_rate=0.01, direction="right"):
@@ -29,6 +33,8 @@ class RNN:
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad
 
+	
+
 	def forward(self, inputs, hprev):
 		if(self.direction == 'left'):
 			inputs = inputs[::-1]
@@ -36,7 +42,9 @@ class RNN:
 		xs, hs, ys, ps = {}, {}, {}, {}
 		hs[-1] = np.copy(hprev)
 
-		for t in range(len(inputs)):
+		seq_length = clip(len(inputs))
+
+		for t in range(seq_length):
 			xs[t] = inputs[t].reshape(-1, 1)
 			hs[t] = self.f(np.dot(self.Wxh, xs[t]) + np.dot(self.Whh, hs[t-1]) + self.bh) 
 			ys[t] = self.f(np.dot(self.Why, hs[t]) + self.by)
@@ -50,6 +58,7 @@ class RNN:
 		dWxh, dWhh, dWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
 		dbh, dby = np.zeros_like(self.bh), np.zeros_like(self.by)
 		dhnext = np.zeros_like(hs[-1])
+
 		for t in reversed(range(len(xs))):
 			tmp = dy[t] * self.f_prime(ys[t])
 			dWhy += np.dot(tmp, hs[t].T)
@@ -65,7 +74,7 @@ class RNN:
 		for dparam in [dWxh, dWhh, dWhy, dbh, dby]:
 			np.clip(dparam, -5, 5, out=dparam) # clip to mitigate exploding gradients
 
-		return dWxh, dWhh, dWhy, dbh, dby, hs[len(xs)-1]
+		return dWxh, dWhh, dWhy, dbh, dby, hs[len(xs) - 1]
 
 	def update_params(self, dWxh, dWhh, dWhy, dbh, dby):
 		# perform parameter update with Adagrad
@@ -86,13 +95,13 @@ class BiDirectionalRNN:
 		self.by = np.zeros((output_size, 1))
 		self.mby = np.zeros_like(self.by)
 
-	def forward(self, x):
-		seq_length = len(x)
+	def forward(self, inputs):
+		seq_length = clip(len(inputs))
 
 		y_pred = []
 		dby = np.zeros_like(self.by)
-		xsl, hsl, ysl, psl = self.left.forward(x, np.zeros((self.hidden_size, 1)))
-		xsr, hsr, ysr, psr = self.right.forward(x, np.zeros((self.hidden_size, 1)))
+		xsl, hsl, ysl, psl = self.left.forward(inputs, np.zeros((self.hidden_size, 1)))
+		xsr, hsr, ysr, psr = self.right.forward(inputs, np.zeros((self.hidden_size, 1)))
 
 		for ind in range(seq_length):
 			this_y = np.dot(self.right.Why, hsr[ind]) + np.dot(self.left.Why, hsl[ind]) + self.by
@@ -100,15 +109,15 @@ class BiDirectionalRNN:
 		
 		return np.argmax(y_pred[-1])
 
-	def train(self, inputs, targets, epochs=5):
+	def train(self, training_data, validation_data, epochs=5):
 		for e in range(epochs):
-			print('Epoch #{}'.format(e + 1))
+			print('Epoch {}'.format(e + 1))
 
-			for x, y in zip(inputs, targets):
+			for x, y in zip(*training_data):
 				hprevr = np.zeros((self.hidden_size, 1))
 				hprevl = np.zeros((self.hidden_size, 1))
 									
-				seq_length = len(x)
+				seq_length = clip(len(x))
 
 				xsl, hsl, ysl, psl = self.left.forward(x, hprevl)
 				xsr, hsr, ysr, psr = self.right.forward(x, hprevr)
@@ -140,28 +149,33 @@ class BiDirectionalRNN:
 				self.right.update_params(dWxhr, dWhhr, dWhyr, dbhr, dbyr)
 				self.left.update_params(dWxhl, dWhhl, dWhyl, dbhl, dbyl)
 
-		print("Training done.")
+			print("(val acc: {:.2f}%)".format(self.predict(validation_data) * 100))
 
-	def predict(self, inputs, targets):
+		print("\nTraining done.")
+
+	def predict(self, testing_data, test=False):
 		correct = 0
-		predictions = {x:0 for x in range(5)}
-		outputs = {x:0 for x in range(5)}
-		for x, y in zip(inputs, targets):
-			if len(x) == 0: 
+		predictions = {x : 0 for x in range(5)}
+		outputs = {x : 0 for x in range(5)}
+		l = 0
+		for x, y in zip(*testing_data):
+			if len(x) == 0:
 				continue
 
 			op = self.forward(x)
 			tr = np.argmax(y)
-			# I have changed this
-			# print op, tr
 			predictions[op] += 1
 			outputs[tr] += 1
 			correct += 1 if op == tr else 0
-		print 'Outputs: ', outputs
-		print 'Predictions:', predictions
-		return (correct + 0.0) / len(inputs)
+			l += 1
 
-def load_data(filename):
+		if test:
+			print 'Outputs:\t', outputs
+			print 'Predictions:\t', predictions
+
+		return (correct + 0.0) / l
+
+def load_data(filename, count):
 	i = 0
 	with open(filename, 'r') as f:
 		reader = csv.reader(f)
@@ -171,7 +185,7 @@ def load_data(filename):
 			inputs.append(row[0])
 			outputs.append(int(row[1]))
 			i += 1
-			if i == 1000:
+			if i == count:
 				break
 		return inputs, outputs
 
@@ -191,27 +205,37 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
+	DATA_SIZE = 20000
+
 	INPUT_SIZE = 64
-	HIDDEN_SIZE = 128
+	HIDDEN_SIZE = 256
 	OUTPUT_SIZE = 5
 	
-	training_inputs, training_targets =  load_data('train.csv')
-	testing_inputs, testing_targets =  load_data('test.csv')
+	train_size = DATA_SIZE * 0.8
+	val_size = DATA_SIZE * 0.1
+	test_size = DATA_SIZE * 0.1
+	
+	training_inputs, training_targets =  load_data('train.csv', train_size)
+	validation_inputs, validation_targets = load_data('dev.csv', val_size)
+	testing_inputs, testing_targets =  load_data('test.csv', test_size)
 
 	training_inputs = np.array([ w2v(i) for i in training_inputs ])
 	training_targets = np.array( [one_hot(i) for i in  training_targets] )
 
+	validation_inputs = np.array([ w2v(i) for i in validation_inputs ])
+	validation_targets = np.array( [one_hot(i) for i in  validation_targets] )
+
 	testing_inputs = np.array([ w2v(i) for i in testing_inputs ])
 	testing_targets = np.array( [one_hot(i) for i in  testing_targets] )
 
-	EPOCHS = 20
-	LEARNING_RATE = 0.15
+	EPOCHS = 6
+	LEARNING_RATE = 0.20
 
 	BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
 
-	BRNN.train(training_inputs, training_targets, epochs=EPOCHS)
+	BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
 
-	accuracy = BRNN.predict(testing_inputs, testing_targets)
+	accuracy = BRNN.predict((testing_inputs, testing_targets), True)
 
-	print("Accuracy: {}%".format(accuracy * 100))
+	print("Accuracy: {:.2f}%".format(accuracy * 100))
 
