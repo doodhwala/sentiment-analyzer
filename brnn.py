@@ -8,15 +8,14 @@ from gensim.models import Word2Vec
 
 model = Word2Vec.load('model64')
 
-
 def relu(z):
 	return z * (z > 0)
 
 def relu_prime(z):
 	return (z > 0)
 
-def clip(size):
-		return min(size, 10)
+def clip(v):
+		return v[:10]
 
 class RNN:
 	def __init__(self, input_size, hidden_size, output_size, learning_rate=0.01, direction="right"):
@@ -35,17 +34,17 @@ class RNN:
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
 
-	def forward(self, inputs, hprev):
+	def forward(self, x, hprev):
 		if(self.direction == 'left'):
-			inputs = inputs[::-1]
+			x = x[::-1]
 	
 		xs, hs, ys, ps = {}, {}, {}, {}
 		hs[-1] = np.copy(hprev)
 
-		seq_length = clip(len(inputs))
+		seq_length = len(x)
 
 		for t in range(seq_length):
-			xs[t] = inputs[t].reshape(-1, 1)
+			xs[t] = x[t].reshape(-1, 1)
 			hs[t] = self.f(np.dot(self.Wxh, xs[t]) + np.dot(self.Whh, hs[t-1]) + self.bh) 
 			ys[t] = self.f(np.dot(self.Why, hs[t]) + self.by)
 			ps[t] = np.exp(ys[t]) / np.sum(np.exp(ys[t]))
@@ -95,13 +94,13 @@ class BiDirectionalRNN:
 		self.by = np.zeros((output_size, 1))
 		self.mby = np.zeros_like(self.by)
 
-	def forward(self, inputs):
-		seq_length = clip(len(inputs))
+	def forward(self, x):
+		seq_length = len(x)
 
 		y_pred = []
 		dby = np.zeros_like(self.by)
-		xsl, hsl, ysl, psl = self.left.forward(inputs, np.zeros((self.hidden_size, 1)))
-		xsr, hsr, ysr, psr = self.right.forward(inputs, np.zeros((self.hidden_size, 1)))
+		xsl, hsl, ysl, psl = self.left.forward(x, np.zeros((self.hidden_size, 1)))
+		xsr, hsr, ysr, psr = self.right.forward(x, np.zeros((self.hidden_size, 1)))
 
 		for ind in range(seq_length):
 			this_y = np.dot(self.right.Why, hsr[ind]) + np.dot(self.left.Why, hsl[ind]) + self.by
@@ -113,13 +112,13 @@ class BiDirectionalRNN:
 		for e in range(epochs):
 			print('Epoch {}'.format(e + 1))
 
-			i = 0
 			for x, y in zip(*training_data):
-				i += 1
+				x = clip(x)
+
 				hprevr = np.zeros((self.hidden_size, 1))
 				hprevl = np.zeros((self.hidden_size, 1))
 									
-				seq_length = clip(len(x))
+				seq_length = len(x)
 
 				xsl, hsl, ysl, psl = self.left.forward(x, hprevl)
 				xsr, hsr, ysr, psr = self.right.forward(x, hprevr)
@@ -159,6 +158,7 @@ class BiDirectionalRNN:
 		if testing_data[1] == None:
 			predictions = []
 			for x in testing_data[0]:
+				x = clip(x)
 				op = self.forward(x)
 				predictions.append(np.argmax(y))
 
@@ -166,11 +166,12 @@ class BiDirectionalRNN:
 
 		else:
 			correct = 0
-			predictions = {x : 0 for x in range(5)}
-			outputs = {x : 0 for x in range(5)}
+			predictions = {x : 0 for x in range(TYPE)}
+			outputs = {x : 0 for x in range(TYPE)}
 
 			l = 0
 			for x, y in zip(*testing_data):
+				x = clip(x)
 				op = self.forward(x)
 				tr = np.argmax(y)
 				predictions[op] += 1
@@ -209,25 +210,44 @@ def w2v(sentence):
 	return np.array(words)
 
 def one_hot(x):
-	v = np.zeros(5)
-	v[x] = 1
+	def three(x):
+		if x < 2:
+			return 0
+		
+		elif x > 2:
+			return 2
+		
+		else:
+			return 1
+
+	v = np.zeros(TYPE)
+
+	if TYPE == 3:
+		v[three(x)] = 1
+	else:
+		v[x] = 1
+	
 	return v
 
 def save_model(BRNN):
-	with open('brnn_model_5.pkl', 'wb') as f:
+	with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
 		dill.dump(BRNN, f)
 
 def load_model():
-	with open('brnn_model_5.pkl', 'rb') as f:
+	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
 		BRNN = dill.load(f)
+
 	return BRNN
 
 if __name__ == "__main__":
-	DATA_SIZE = 1000
+	DATA_SIZE = 200000
+	TYPE = 3
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 16
-	OUTPUT_SIZE = 5
+	OUTPUT_SIZE = TYPE
+
+	
 	
 	train_size = DATA_SIZE * 0.8
 	val_size = DATA_SIZE * 0.1
@@ -273,7 +293,7 @@ if __name__ == "__main__":
 	TRAIN = False
 
 	BRNN = None
-	if(TRAIN):
+	if TRAIN:
 		BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
 		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
 		save_model(BRNN)

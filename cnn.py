@@ -8,6 +8,9 @@ from gensim.models import Word2Vec
 
 model = Word2Vec.load('model64')
 
+def clip(sentence):
+		return np.array(sentence[:10])
+
 """ ------------------------------------------------------------------------------- """
 
 class ConvolutionalNeuralNet:
@@ -22,7 +25,7 @@ class ConvolutionalNeuralNet:
 
 	def train(self, training_data, validation_data, epochs=5):):
 		for x, y in zip(*training_data):
-			pass
+			x = clip(x)
 
 	def predict(self, testing_data, test=False):
 		correct = 0
