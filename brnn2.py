@@ -5,7 +5,7 @@ import pprint
 
 from gensim.models import Word2Vec
 
-model = Word2Vec.load('model')
+model = Word2Vec.load('model64')
 
 def relu(z):
 	return z * (z > 0)
@@ -32,8 +32,6 @@ class RNN:
 
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad
-
-	
 
 	def forward(self, inputs, hprev):
 		if(self.direction == 'left'):
@@ -152,26 +150,36 @@ class BiDirectionalRNN:
 			print("(val acc: {:.2f}%)".format(self.predict(validation_data) * 100))
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(3)}
-		outputs = {x : 0 for x in range(3)}
-		l = 0
-		for x, y in zip(*testing_data):
-			if len(x) == 0:
-				continue
 
-			op = self.forward(x)
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct += 1 if op == tr else 0
-			l += 1
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
+			return predictions
 
-		return (correct + 0.0) / l
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(3)}
+			outputs = {x : 0 for x in range(3)}
+			l = 0
+			for x, y in zip(*testing_data):
+				if len(x) == 0:
+					continue
+
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct += 1 if op == tr else 0
+				l += 1
+
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
@@ -213,7 +221,7 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 50000
+	DATA_SIZE = 10000
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 32
