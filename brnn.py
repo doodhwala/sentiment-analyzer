@@ -2,10 +2,12 @@ import numpy as np
 import csv
 import sys
 import pprint
+import dill
 
 from gensim.models import Word2Vec
 
-model = Word2Vec.load('model')
+model = Word2Vec.load('model64')
+
 
 def relu(z):
 	return z * (z > 0)
@@ -31,9 +33,7 @@ class RNN:
 		self.by = np.zeros((output_size, 1)) # output bias - computed but not used
 
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
-		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad
-
-	
+		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
 
 	def forward(self, inputs, hprev):
 		if(self.direction == 'left'):
@@ -156,24 +156,33 @@ class BiDirectionalRNN:
 		print("\nTraining done.")
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(5)}
-		outputs = {x : 0 for x in range(5)}
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		l = 0
-		for x, y in zip(*testing_data):
-			op = self.forward(x)
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct = correct + 1 if op == tr else correct + 0
-			l += 1
+			return predictions
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(5)}
+			outputs = {x : 0 for x in range(5)}
 
-		return (correct + 0.0) / l
+			l = 0
+			for x, y in zip(*testing_data):
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
+
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
@@ -204,8 +213,17 @@ def one_hot(x):
 	v[x] = 1
 	return v
 
+def save_model(BRNN):
+	with open('brnn_model_5.pkl', 'wb') as f:
+		dill.dump(BRNN, f)
+
+def load_model():
+	with open('brnn_model_5.pkl', 'rb') as f:
+		BRNN = dill.load(f)
+	return BRNN
+
 if __name__ == "__main__":
-	DATA_SIZE = 20000
+	DATA_SIZE = 1000
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 16
@@ -251,10 +269,16 @@ if __name__ == "__main__":
 
 	EPOCHS = 10
 	LEARNING_RATE = 0.20
+	
+	TRAIN = False
 
-	BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
-
-	BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
+	BRNN = None
+	if(TRAIN):
+		BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
+		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
+		save_model(BRNN)
+	else:
+		BRNN = load_model()
 
 	accuracy = BRNN.predict((testing_inputs, testing_targets), True)
 
