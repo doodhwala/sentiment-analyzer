@@ -204,7 +204,7 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 1000
+	DATA_SIZE = 20000
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 32
