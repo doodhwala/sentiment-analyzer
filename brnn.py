@@ -4,6 +4,9 @@ import sys
 import pprint
 import dill
 
+import parser
+from preprocess import clean
+
 from gensim.models import Word2Vec
 
 model = Word2Vec.load('model64')
@@ -25,10 +28,10 @@ class RNN:
 		self.f = np.tanh
 		self.f_prime = lambda x: 1 - (x ** 2)
 
-		self.Wxh = np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / (hidden_size + input_size))
-		self.Whh = np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / (hidden_size * 2))
-		self.Why = np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / (hidden_size + output_size))
-		self.bh = np.zeros((hidden_size, 1)) 
+		self.Wxh = (np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / (hidden_size + input_size)))
+		self.Whh = (np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / (hidden_size * 2)))
+		self.Why = (np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / (hidden_size + output_size)))
+		self.bh = np.zeros((hidden_size, 1))
 		self.by = np.zeros((output_size, 1)) # output bias - computed but not used
 
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
@@ -63,7 +66,7 @@ class RNN:
 			dWhy += np.dot(tmp, hs[t].T)
 			dby += tmp
 			dh = np.dot(self.Why.T, dy[t]) + dhnext
-			dhraw = dh * (1 - hs[t] ** 2)
+			dhraw = dh * self.f_prime(hs[t])
 			#dhraw = dh * relu_prime(hs[t])
 			dbh += dhraw
 			dWxh += np.dot(dhraw, xs[t].T)
@@ -155,35 +158,25 @@ class BiDirectionalRNN:
 		print("\nTraining done.")
 
 	def predict(self, testing_data, test=False):
-		if testing_data[1] == None:
-			predictions = []
-			for x in testing_data[0]:
-				x = clip(x)
-				op = self.forward(x)
-				predictions.append(np.argmax(y))
+		correct = 0
+		predictions = {x : 0 for x in range(TYPE)}
+		outputs = {x : 0 for x in range(TYPE)}
 
-			return predictions
+		l = 0
+		for x, y in zip(*testing_data):
+			x = clip(x)
+			op = self.forward(x)
+			tr = np.argmax(y)
+			predictions[op] += 1
+			outputs[tr] += 1
+			correct = correct + 1 if op == tr else correct + 0
+			l += 1
 
-		else:
-			correct = 0
-			predictions = {x : 0 for x in range(TYPE)}
-			outputs = {x : 0 for x in range(TYPE)}
+		if test:
+			print 'Outputs:\t', outputs
+			print 'Predictions:\t', predictions
 
-			l = 0
-			for x, y in zip(*testing_data):
-				x = clip(x)
-				op = self.forward(x)
-				tr = np.argmax(y)
-				predictions[op] += 1
-				outputs[tr] += 1
-				correct = correct + 1 if op == tr else correct + 0
-				l += 1
-
-			if test:
-				print 'Outputs:\t', outputs
-				print 'Predictions:\t', predictions
-
-			return (correct + 0.0) / l
+		return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
@@ -203,7 +196,7 @@ def w2v(sentence):
 	words = []
 	for word in sentence.split():
 		try:
-			words.append(model[word])
+			words.append((model[word]) )
 		except Exception:
 			pass
 
@@ -240,7 +233,7 @@ def load_model():
 	return BRNN
 
 if __name__ == "__main__":
-	DATA_SIZE = 200000
+	DATA_SIZE = 10000
 	TYPE = 3
 
 	INPUT_SIZE = 64
@@ -304,3 +297,21 @@ if __name__ == "__main__":
 
 	print("Accuracy: {:.2f}%".format(accuracy * 100))
 
+	while True:
+		sentence = raw_input("Enter a sentence to parse: ")
+		phrases = parser.create_phrases(parser.create_tree(sentence))
+
+		out_p = []
+		out_s = []
+
+		for phrase in phrases:
+			phrase = clean(phrase)
+			v = w2v(phrase)
+			if phrase and phrase not in out_p:
+				out_p.append(phrase)
+				if v.shape[0]:
+					out_s.append(BRNN.forward(v))
+				else:
+					out_s.append(TYPE/2)
+
+		print zip(out_p, out_s)

@@ -1,5 +1,5 @@
 import re
-import preprocess
+
 import pytreebank
 from pycorenlp import StanfordCoreNLP
 
@@ -24,7 +24,7 @@ def get_part(string):
 
 def create_phrases(tree_string):
 	phrases = []
-	tree_string = re.sub('\([a-zA-Z]+ ', '(2 ', tree_string)[3:-1]
+	tree_string = re.sub('\([a-zA-Z$]+ ', '(2 ', tree_string)[3:-1]
 	print tree_string
 	# tree_string = '(2 (2 (2 (2 what)) (2 (2 a) (2 cool) (2 python) (2 package))))'
 	# tree_string = '(4 (2 what) (3 (2 a) (3 (3 (3 cool) (2 python)) (2 package))))'
@@ -37,15 +37,7 @@ def create_phrases(tree_string):
 			# print 'part: ', part
 			phrases.add(get_phrase(part))
 	return list(phrases)
-'''
-def create_phrases(tree_string):
-	# tree_string = '(2 (2 (2 global) (2 warming)) (2 (2 is) (2 (2 a) (2 hoax))))'
-	# tree_string = re.sub('\([a-zA-Z]+ ', '(2 ', tree_string)[3:-1]
-	# print tree_string
-	# tree_string = '(2 (2 aliens)) (2 (2 are) (2 (2 attacking) (2 (2 my) (2 planet))))'
-	tree = pytreebank.create_tree_from_string(tree_string)
-	print tree.to_labeled_lines()
-'''
+
 def create_tree(sentence):
 	text = (sentence)
 	output = nlp.annotate(text, properties={'annotators': 'tokenize,ssplit,sentiment', 'outputFormat': 'json'})
