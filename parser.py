@@ -1,5 +1,6 @@
 import re
-import preprocess
+
+import pytreebank
 from pycorenlp import StanfordCoreNLP
 
 nlp = StanfordCoreNLP('http://localhost:9000')
@@ -21,13 +22,13 @@ def get_part(string):
 		part += char
 	return part
 
-def create_phrase(tree_string):
-	global tree
+def create_phrases(tree_string):
 	phrases = []
-	tree_string = re.sub('\([a-zA-Z]+ ', '(2 ', tree_string)
+	tree_string = re.sub('\([a-zA-Z$]+ ', '(2 ', tree_string)[3:-1]
 	print tree_string
 	# tree_string = '(2 (2 (2 (2 what)) (2 (2 a) (2 cool) (2 python) (2 package))))'
 	# tree_string = '(4 (2 what) (3 (2 a) (3 (3 (3 cool) (2 python)) (2 package))))'
+
 	phrases = set()
 	for index in xrange(len(tree_string)):
 		char = tree_string[index]
@@ -35,11 +36,11 @@ def create_phrase(tree_string):
 			part = get_part(tree_string[index:])
 			# print 'part: ', part
 			phrases.add(get_phrase(part))
-	return list[phrases]
+	return list(phrases)
 
 def create_tree(sentence):
 	text = (sentence)
-	output = nlp.annotate(text, properties={'annotators': 'tokenize,ssplit,sentiment,depparse,parse', 'outputFormat': 'json'})
+	output = nlp.annotate(text, properties={'annotators': 'tokenize,ssplit,sentiment', 'outputFormat': 'json'})
 	output = output['sentences'][0]['parse'].split('\n')
 	output = [line.strip() for line in output]
 	output = ' '.join(output)
@@ -49,4 +50,4 @@ if __name__ == '__main__':
 	sentence = raw_input('Enter a sentence to parse: ')
 	output = create_tree(sentence)
 	print output
-	print create_phrase(output)
+	print create_phrases(output)
