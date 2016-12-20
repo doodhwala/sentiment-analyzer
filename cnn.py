@@ -1,6 +1,6 @@
 import numpy as np
 import scipy
-import scikit-learn
+import sklearn
 import csv
 import sys
 
@@ -8,8 +8,18 @@ from gensim.models import Word2Vec
 
 model = Word2Vec.load('model64')
 
-def clip(sentence):
-		return np.array(sentence[:10])
+def clip(v):
+		x = v[:10]
+		return np.lib.pad(np.array(x), ((0, 10 - len(x)), (0, 0) ), 'constant')
+
+def save_model(brnn):
+	with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
+		dill.dump(brnn, f)
+
+def load_model():
+	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
+		brnn = dill.load(f)
+	return brnn
 
 """ ------------------------------------------------------------------------------- """
 
@@ -25,29 +35,37 @@ class ConvolutionalNeuralNet:
 
 	def train(self, training_data, validation_data, epochs=5):):
 		for x, y in zip(*training_data):
-			x = clip(x)
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(3)}
-		outputs = {x : 0 for x in range(3)}
-		l = 0
-		for x, y in zip(*testing_data):
-			if len(x) == 0:
-				continue
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				x = clip(x)
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-			op = self.forward(x)
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct += 1 if op == tr else 0
-			l += 1
+			return predictions
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(TYPE)}
+			outputs = {x : 0 for x in range(TYPE)}
 
-		return (correct + 0.0) / l
+			l = 0
+			for x, y in zip(*testing_data):
+				x = clip(x)
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
+
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 """ ------------------------------------------------------------------------------- """
 
@@ -73,19 +91,36 @@ def w2v(sentence):
 		except Exception:
 			pass
 
-	return np.array(words)
+	return clip(np.array(words))
 
 def one_hot(x):
-	v = np.zeros(5)
-	v[x] = 1
+	def three(x):
+		if x < 2:
+			return 0
+		
+		elif x > 2:
+			return 2
+		
+		else:
+			return 1
+
+	v = np.zeros(TYPE)
+
+	if TYPE == 3:
+		v[three(x)] = 1
+	else:
+		v[x] = 1
+	
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 20000
+	DATA_SIZE = 100
+	TYPE = 3
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 16
-	OUTPUT_SIZE = 5
+	OUTPUT_SIZE = TYPE
+
 	
 	train_size = DATA_SIZE * 0.8
 	val_size = DATA_SIZE * 0.1
@@ -104,6 +139,9 @@ if __name__ == "__main__":
 
 		training_inputs.append(v)
 		training_targets.append(one_hot(t_t[i]))
+
+	print np.array(training_inputs).shape
+	exit()
 
 	validation_inputs = []
 	validation_targets = []
@@ -128,9 +166,16 @@ if __name__ == "__main__":
 	EPOCHS = 1
 	LEARNING_RATE = 0.20
 
-	CNN = ConvolutionalNeuralNet()
+	TRAIN = False
 
-	CNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
+	CNN = None
+	if TRAIN:
+		CNN = ConvolutionalNeuralNet()
+		CNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
+		save_model(CNN)
+	else:
+		CNN = load_model()
+	
 
 	accuracy = CNN.predict((testing_inputs, testing_targets), True)
 
