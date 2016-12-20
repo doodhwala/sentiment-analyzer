@@ -159,13 +159,14 @@ class BiDirectionalRNN:
 		correct = 0
 		predictions = {x : 0 for x in range(5)}
 		outputs = {x : 0 for x in range(5)}
+
 		l = 0
 		for x, y in zip(*testing_data):
 			op = self.forward(x)
 			tr = np.argmax(y)
 			predictions[op] += 1
 			outputs[tr] += 1
-			correct += 1 if op == tr else 0
+			correct = correct + 1 if op == tr else correct + 0
 			l += 1
 
 		if test:
@@ -207,27 +208,48 @@ if __name__ == "__main__":
 	DATA_SIZE = 20000
 
 	INPUT_SIZE = 64
-	HIDDEN_SIZE = 32
+	HIDDEN_SIZE = 16
 	OUTPUT_SIZE = 5
 	
 	train_size = DATA_SIZE * 0.8
 	val_size = DATA_SIZE * 0.1
 	test_size = DATA_SIZE * 0.1
 	
-	training_inputs, training_targets =  load_data('train.csv', train_size)
-	validation_inputs, validation_targets = load_data('dev.csv', val_size)
-	testing_inputs, testing_targets =  load_data('test.csv', test_size)
+	t_i, t_t =  load_data('train.csv', train_size)
+	v_i, v_t = load_data('dev.csv', val_size)
+	ts_i, ts_t =  load_data('test.csv', test_size)
 
-	training_inputs = np.array([ w2v(i) for i in training_inputs ])
-	training_targets = np.array( [one_hot(i) for i in  training_targets] )
+	training_inputs = []
+	training_targets = []
+	for i in range(len(t_i)):
+		v = w2v(t_i[i])
+		if len(v) == 0:
+			continue
 
-	validation_inputs = np.array([ w2v(i) for i in validation_inputs ])
-	validation_targets = np.array( [one_hot(i) for i in  validation_targets] )
+		training_inputs.append(v)
+		training_targets.append(one_hot(t_t[i]))
 
-	testing_inputs = np.array([ w2v(i) for i in testing_inputs ])
-	testing_targets = np.array( [one_hot(i) for i in  testing_targets] )
+	validation_inputs = []
+	validation_targets = []
+	for i in range(len(v_i)):
+		v = w2v(v_i[i])
+		if len(v) == 0:
+			continue
 
-	EPOCHS = 5
+		validation_inputs.append(v)
+		validation_targets.append(one_hot(v_t[i]))
+
+	testing_inputs = []
+	testing_targets = []
+	for i in range(len(ts_i)):
+		v = w2v(ts_i[i])
+		if len(v) == 0:
+			continue
+
+		testing_inputs.append(v)
+		testing_targets.append(one_hot(ts_t[i]))
+
+	EPOCHS = 10
 	LEARNING_RATE = 0.20
 
 	BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
