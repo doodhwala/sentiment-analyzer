@@ -9,8 +9,6 @@ from preprocess import clean
 
 from gensim.models import Word2Vec
 
-model = Word2Vec.load('model64')
-
 def relu(z):
 	return z * (z > 0)
 
@@ -28,16 +26,18 @@ class RNN:
 		self.f = np.tanh
 		self.f_prime = lambda x: 1 - (x ** 2)
 
-		self.Wxh = (np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / (hidden_size + input_size)))
-		self.Whh = (np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / (hidden_size * 2)))
-		self.Why = (np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / (hidden_size + output_size)))
-		self.bh = np.zeros((hidden_size, 1))
+		self.Wxh = np.random.randn(hidden_size, input_size) * np.sqrt(2.0 / (hidden_size + input_size))
+		self.Whh = np.random.randn(hidden_size, hidden_size) * np.sqrt(2.0 / (hidden_size * 2))
+		self.Why = np.random.randn(output_size, hidden_size) * np.sqrt(2.0 / (hidden_size + output_size))
+		self.bh = np.zeros((hidden_size, 1)) 
 		self.by = np.zeros((output_size, 1)) # output bias - computed but not used
 
 		self.mWxh, self.mWhh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Whh), np.zeros_like(self.Why)
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
+		
+		#self.dropout_percent = 0.95
 
-	def forward(self, x, hprev):
+	def forward(self, x, hprev, do_dropout=False):
 		if(self.direction == 'left'):
 			x = x[::-1]
 	
@@ -49,11 +49,15 @@ class RNN:
 		for t in range(seq_length):
 			xs[t] = x[t].reshape(-1, 1)
 			hs[t] = self.f(np.dot(self.Wxh, xs[t]) + np.dot(self.Whh, hs[t-1]) + self.bh) 
+			#if(do_dropout):
+			#	hs[t] *= np.random.binomial(1, self.dropout_percent, size=hs[t-1].shape)
+			#else:
+			#	hs[t] *= self.dropout_percent
 			ys[t] = self.f(np.dot(self.Why, hs[t]) + self.by)
 			ps[t] = np.exp(ys[t]) / np.sum(np.exp(ys[t]))
 		return xs, hs, ys, ps
 
-	def backprop(self, xs, hs, ys, ps, targets, dy):
+	def backprop(self, xs, hs, ys, ps, targets, dy, do_dropout=False):
 		if(self.direction == 'left'):
 			xs = {len(xs)-1-k : xs[k] for k in xs}
 
@@ -62,11 +66,11 @@ class RNN:
 		dhnext = np.zeros_like(hs[-1])
 
 		for t in reversed(range(len(xs))):
-			tmp = dy[t] * self.f_prime(ys[t])
+			tmp = dy[t] * self.f_prime(ys[t])# * self.dropout_percent
 			dWhy += np.dot(tmp, hs[t].T)
 			dby += tmp
 			dh = np.dot(self.Why.T, dy[t]) + dhnext
-			dhraw = dh * self.f_prime(hs[t])
+			dhraw = dh * (1 - hs[t] ** 2)
 			#dhraw = dh * relu_prime(hs[t])
 			dbh += dhraw
 			dWxh += np.dot(dhraw, xs[t].T)
@@ -111,7 +115,7 @@ class BiDirectionalRNN:
 		
 		return np.argmax(y_pred[-1])
 
-	def train(self, training_data, validation_data, epochs=5):
+	def train(self, training_data, validation_data, epochs=5, do_dropout=False):
 		for e in range(epochs):
 			print('Epoch {}'.format(e + 1))
 
@@ -123,8 +127,8 @@ class BiDirectionalRNN:
 									
 				seq_length = len(x)
 
-				xsl, hsl, ysl, psl = self.left.forward(x, hprevl)
-				xsr, hsr, ysr, psr = self.right.forward(x, hprevr)
+				xsl, hsl, ysl, psl = self.left.forward(x, hprevl, do_dropout)
+				xsr, hsr, ysr, psr = self.right.forward(x, hprevr, do_dropout)
 
 				y_pred = []
 				dy = []
@@ -147,8 +151,8 @@ class BiDirectionalRNN:
 				self.mby += dby * dby
 				self.by += -self.learning_rate * dby / np.sqrt(self.mby + 1e-8) # adagrad update
 
-				dWxhr, dWhhr, dWhyr, dbhr, dbyr, hprevr = self.right.backprop(xsr, hsr, ysr, psr, y, dy)
-				dWxhl, dWhhl, dWhyl, dbhl, dbyl, hprevl = self.left.backprop(xsl, hsl, ysl, psl, y, dy)
+				dWxhr, dWhhr, dWhyr, dbhr, dbyr, hprevr = self.right.backprop(xsr, hsr, ysr, psr, y, dy, do_dropout)
+				dWxhl, dWhhl, dWhyl, dbhl, dbyl, hprevl = self.left.backprop(xsl, hsl, ysl, psl, y, dy, do_dropout)
 
 				self.right.update_params(dWxhr, dWhhr, dWhyr, dbhr, dbyr)
 				self.left.update_params(dWxhl, dWhhl, dWhyl, dbhl, dbyl)
@@ -158,25 +162,35 @@ class BiDirectionalRNN:
 		print("\nTraining done.")
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(TYPE)}
-		outputs = {x : 0 for x in range(TYPE)}
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				x = clip(x)
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		l = 0
-		for x, y in zip(*testing_data):
-			x = clip(x)
-			op = self.forward(x)
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct = correct + 1 if op == tr else correct + 0
-			l += 1
+			return predictions
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(TYPE)}
+			outputs = {x : 0 for x in range(TYPE)}
 
-		return (correct + 0.0) / l
+			l = 0
+			for x, y in zip(*testing_data):
+				x = clip(x)
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
+
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
@@ -196,7 +210,7 @@ def w2v(sentence):
 	words = []
 	for word in sentence.split():
 		try:
-			words.append((model[word]) )
+			words.append(model[word])
 		except Exception:
 			pass
 
@@ -229,7 +243,6 @@ def save_model(BRNN):
 def load_model():
 	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
 		BRNN = dill.load(f)
-
 	return BRNN
 
 if __name__ == "__main__":
@@ -240,8 +253,8 @@ if __name__ == "__main__":
 	HIDDEN_SIZE = 16
 	OUTPUT_SIZE = TYPE
 
-	
-	
+	model = Word2Vec.load('model%s' % INPUT_SIZE)
+
 	train_size = DATA_SIZE * 0.8
 	val_size = DATA_SIZE * 0.1
 	test_size = DATA_SIZE * 0.1
@@ -288,7 +301,7 @@ if __name__ == "__main__":
 	BRNN = None
 	if TRAIN:
 		BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
-		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
+		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS, do_dropout=True)
 		save_model(BRNN)
 	else:
 		BRNN = load_model()
