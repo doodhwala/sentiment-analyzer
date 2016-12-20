@@ -61,7 +61,7 @@ def create_model():
 	sentences = []
 	for i in lines:
 		sentences.append(i.split())
-	model = Word2Vec(sentences, window=3, size=64, iter=100)
+	model = Word2Vec(sentences, window=5, size=64, iter=100)
 	model.save('model')
 	f.close()
 

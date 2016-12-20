@@ -5,7 +5,7 @@ import pprint
 
 from gensim.models import Word2Vec
 
-model = Word2Vec.load('model')
+model = Word2Vec.load('model64')
 
 def relu(z):
 	return z * (z > 0)
@@ -156,24 +156,33 @@ class BiDirectionalRNN:
 		print("\nTraining done.")
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(5)}
-		outputs = {x : 0 for x in range(5)}
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		l = 0
-		for x, y in zip(*testing_data):
-			op = self.forward(x)
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct = correct + 1 if op == tr else correct + 0
-			l += 1
+			return predictions
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(5)}
+			outputs = {x : 0 for x in range(5)}
 
-		return (correct + 0.0) / l
+			l = 0
+			for x, y in zip(*testing_data):
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
+
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
