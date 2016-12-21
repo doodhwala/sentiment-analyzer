@@ -11,6 +11,12 @@ from gensim.models import Word2Vec
 
 model = Word2Vec.load('model64')
 
+def relu(z):
+	return z * (z > 0)
+
+def relu_prime(z):
+	return (z > 0)
+
 def clip(v):
 		x = v[:10]
 		if len(x) % 2 == 0:
@@ -22,71 +28,54 @@ def clip(v):
 		return np.lib.pad(np.array(x), ((b, a), (0, 0) ), 'constant')
 
 def save_model(brnn):
-	with open('cnn_model_%s.pkl' % TYPE, 'wb') as f:
+	with open('cnn2_model_%s.pkl' % TYPE, 'wb') as f:
 		dill.dump(brnn, f)
 
 def load_model():
-	with open('cnn_model_%s.pkl' % TYPE, 'rb') as f:
+	with open('cnn2_model_%s.pkl' % TYPE, 'rb') as f:
 		brnn = dill.load(f)
 	return brnn
 
 """ ------------------------------------------------------------------------------- """
 
 class ConvolutionalNeuralNet:
-	def __init__(self, vec_size, input_dim, filter_dim, num_filters, stride, output_size, learning_rate=0.01):
-
-
-
-		# input_size = 10
-		# filter_size = 2
-		# stride = 1
-
-		# output_size = (input_size - filter_size + 1) / stride
-
-		# x = np.random.randn(input_size * 64)
-		# y = np.random.randn(filter_size * 64)
-
-		# o = []
-
-		# 
-		# i, j = 0, 0
-		# while j < output_size:
-		# 	o.append(np.convolve(x[i : i + 128], y, 'valid')) 
-		# 	i += stride * 64
-		# 	j += 1
-
-		# print len(np.array(o))
-
-		self.num_filters = num_filters
-		self.stride = stride
+	def __init__(self, vec_size, input_dim, filter_config, output_size, learning_rate=0.01):
 		self.vec_size = vec_size
 		self.input_dim = input_dim	
-		self.filter_dim = filter_dim
-		self.result_size = (input_dim - filter_dim) / stride + 1
+		self.num_filters = len(filter_config)
 		self.learning_rate = learning_rate
-		self.f = np.tanh
-		self.f_prime = lambda x: 1 - (x ** 2)
+		self.f = relu#np.tanh
+		self.f_prime = relu_prime #lambda x: 1 - (x ** 2)
 
-		self.Wxh = np.random.randn(self.num_filters, self.filter_dim * vec_size) * np.sqrt(2.0 / (self.filter_dim * vec_size + 1))
-		self.Why = np.random.randn(output_size, num_filters ) * np.sqrt(2.0 / (output_size + num_filters))
-		self.bh = np.zeros((self.num_filters, self.result_size))
+		self.stride_list = [i[1] for i in filter_config]
+		self.filter_dim_list = [i[0] for i in filter_config]
+		self.result_size_list = [ (input_dim - d) / s + 1 for d, s in zip(self.filter_dim_list, self.stride_list) ]
+
+		self.Wxh = [ np.random.randn(d * vec_size) * np.sqrt(2.0 / (d * vec_size)) for d in self.filter_dim_list ]
+		self.Why = np.random.randn(output_size, self.num_filters ) * np.sqrt(2.0 / (output_size + self.num_filters))
+		self.bh = [ np.zeros(r) for r in self.result_size_list ]
 		self.by = np.zeros((output_size, 1))
 
-		self.mWxh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Why)
+		self.mWxh, self.mWhy = [np.zeros_like(w) for w in self.Wxh], [np.zeros_like(w) for w in self.Why]
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
 
 	def forward(self, x):
 		h = []
 		mask = []
-		for f, b in zip(self.Wxh, self.bh):
+
+		for i in range(self.num_filters):
+			result_size = self.result_size_list[i]
+			f = self.Wxh[i]
+			b = self.bh[i]
+
 			c = []
 			indices = []
-			i, j = 0, 0
-			while j < self.result_size:
-				c.append(np.dot(x[i : i + self.filter_dim].reshape(-1, ), f) + b[j])
-				indices.append((i, i + self.filter_dim))
-				j += 1
-				i += self.stride
+			j, k = 0, 0
+			while j < result_size:
+				c.append(np.dot(x[j : j + self.filter_dim_list[i]].reshape(-1, ), f) + b[k])
+				indices.append((j, j + self.filter_dim_list[i]))
+				k += 1
+				j += self.stride_list[i]
 
 			h.append(np.max(c))
 			mask.append([np.argmax(c)] + list(indices[np.argmax(c)]) )
@@ -95,7 +84,6 @@ class ConvolutionalNeuralNet:
 		p = np.exp(y) / np.sum(np.exp(y))
 
 		return np.array(h), np.array(mask), y, p
-
 
 	def backprop(self, x, h, mask, y, dy):
 		dWxh, dWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Why)
@@ -109,10 +97,11 @@ class ConvolutionalNeuralNet:
 
 		for i, d in enumerate(dhraw):
 			dWxh[i] = np.dot( x[mask[i][1] : mask[i][2]].reshape(-1, 1), d.reshape(-1, 1)).reshape(-1)
-			dbh[i][mask[i][0]] = d * self.bh[i][mask[i][0]]
+			dbh[i] = d
 
 		for dparam in [dWxh, dWhy, dbh, dby]:
-			np.clip(dparam, -5, 5, out=dparam) # clip to mitigate exploding gradients
+			for i in range(len(dparam)):
+				np.clip(dparam[i], -5, 5, out=dparam[i]) # clip to mitigate exploding gradients
 		
 		return dWxh, dWhy, dbh, dby
 		
@@ -137,8 +126,9 @@ class ConvolutionalNeuralNet:
 		for param, dparam, mem in zip([self.Wxh, self.Why, self.bh, self.by],
 		                            [dWxh, dWhy, dbh, dby],
 		                            [self.mWxh, self.mWhy, self.mbh, self.mby]):
-			mem += dparam * dparam
-			param += -self.learning_rate * dparam / np.sqrt(mem + 1e-8) # adagrad update
+			for i in range(len(dparam)):
+				mem[i] += dparam[i] * dparam[i]
+				param[i] += -self.learning_rate * dparam[i] / np.sqrt(mem[i] + 1e-8) # adagrad update
 
 	def predict(self, testing_data, test=False):
 		if testing_data[1] == None:
@@ -216,12 +206,11 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 5000
+	DATA_SIZE = 3000000
 	TYPE = 3
 
 	INPUT_SIZE = 64
-	FILTER_DIM = 2
-	NUM_FILTERS = 16
+	FILTER_CONFIG = [(2, 1), (2, 2), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (5, 1), (5, 2), (5, 3), (5, 4)]
 	STRIDE = 1
 	POOL_DIM = 2
 	OUTPUT_SIZE = TYPE
@@ -265,14 +254,14 @@ if __name__ == "__main__":
 		testing_inputs.append(clip(v))
 		testing_targets.append(one_hot(ts_t[i]))
 
-	EPOCHS = 3
-	LEARNING_RATE = 0.01
+	EPOCHS = 10
+	LEARNING_RATE = 0.033
 
-	TRAIN = True
+	TRAIN = False
 
 	CNN = None
 	if TRAIN:
-		CNN = ConvolutionalNeuralNet(INPUT_SIZE, 10, FILTER_DIM, NUM_FILTERS, STRIDE, OUTPUT_SIZE, LEARNING_RATE)
+		CNN = ConvolutionalNeuralNet(INPUT_SIZE, 10, FILTER_CONFIG, OUTPUT_SIZE, LEARNING_RATE)
 		CNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
 		save_model(CNN)
 	else:
