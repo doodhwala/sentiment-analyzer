@@ -158,6 +158,7 @@ class BiDirectionalRNN:
 				self.left.update_params(dWxhl, dWhhl, dWhyl, dbhl, dbyl)
 
 			print("(val acc: {:.2f}%)".format(self.predict(validation_data) * 100))
+			save_model(self, e+1)
 
 		print("\nTraining done.")
 
@@ -245,9 +246,13 @@ def one_hot(x):
 	
 	return v
 
-def save_model(BRNN):
-	with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
-		dill.dump(BRNN, f)
+def save_model(BRNN, epoch=0):
+	if(epoch):
+		with open('temp_models/brnn_model_%s_%s.pkl' % (TYPE, epoch), 'wb') as f:
+			dill.dump(BRNN, f)
+	else:
+		with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
+			dill.dump(BRNN, f)
 
 def load_model():
 	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
@@ -255,7 +260,7 @@ def load_model():
 	return BRNN
 
 if __name__ == "__main__":
-	DATA_SIZE = 3000000
+	DATA_SIZE = 20000
 	TYPE = 5
 
 	INPUT_SIZE = 64
@@ -302,14 +307,18 @@ if __name__ == "__main__":
 		testing_inputs.append(v)
 		testing_targets.append(one_hot(ts_t[i]))
 
-	EPOCHS = 20
+	EPOCHS = 10
 	LEARNING_RATE = 0.20
 	
-	TRAIN = True
-
+	TRAIN = False
+	RETRAIN = False
+	
 	BRNN = None
 	if TRAIN:
-		BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
+		if(RETRAIN):
+			BRNN = load_model()
+		else:
+			BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
 		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS, do_dropout=True)
 		save_model(BRNN)
 	else:
