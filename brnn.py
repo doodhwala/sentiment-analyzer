@@ -251,16 +251,16 @@ def save_model(BRNN, epoch=0):
 		with open('temp_models/brnn_model_%s_%s.pkl' % (TYPE, epoch), 'wb') as f:
 			dill.dump(BRNN, f)
 	else:
-		with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
+		with open('brnn_models/brnn_model_%s.pkl' % TYPE, 'wb') as f:
 			dill.dump(BRNN, f)
 
 def load_model():
-	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
+	with open('brnn_models/brnn_model_%s.pkl' % TYPE, 'rb') as f:
 		BRNN = dill.load(f)
 	return BRNN
 
 if __name__ == "__main__":
-	DATA_SIZE = 20000
+	DATA_SIZE = 3000000
 	TYPE = 5
 
 	INPUT_SIZE = 64
