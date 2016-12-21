@@ -71,7 +71,6 @@ class RNN:
 			dby += tmp
 			dh = np.dot(self.Why.T, dy[t]) + dhnext
 			dhraw = dh * (1 - hs[t] ** 2)
-			#dhraw = dh * relu_prime(hs[t])
 			dbh += dhraw
 			dWxh += np.dot(dhraw, xs[t].T)
 			dWhh += np.dot(dhraw, hs[t-1].T)
@@ -158,49 +157,39 @@ class BiDirectionalRNN:
 				self.left.update_params(dWxhl, dWhhl, dWhyl, dbhl, dbyl)
 
 			print("(val acc: {:.2f}%)".format(self.predict(validation_data) * 100))
-			save_model(self, e+1)
 
 		print("\nTraining done.")
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(TYPE)}
-		outputs = {x : 0 for x in range(TYPE)}
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				x = clip(x)
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		pred_pos = {x : 0 for x in range(TYPE)}
-		pred_neg = {x : 0 for x in range(TYPE)}
+			return predictions
 
-		l = 0
-		for x, y in zip(*testing_data):
-			x = clip(x)
-			tr = np.argmax(y)
-			op = self.forward(x)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct = correct + 1 if op == tr else correct + 0
-			l += 1
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(TYPE)}
+			outputs = {x : 0 for x in range(TYPE)}
 
-			if(op == tr):
-				pred_pos[op] += 1
-			else:
-				pred_neg[op] += 1
+			l = 0
+			for x, y in zip(*testing_data):
+				x = clip(x)
+				op = self.forward(x)
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
-			precision = {}
-			recall = {}
-			for i in range(TYPE):
-				precision[i] = 1 if predictions[i] == 0 else (pred_pos[i]+0.0)/predictions[i]
-				print 'Precision', i, ':', precision[i]
-			for i in range(TYPE):
-				recall[i] = 1 if outputs[i] == 0 else (pred_pos[i]+0.0)/(outputs[i])
-				print 'Recall', i, ':', recall[i]
-			for i in range(TYPE):
-				print 'F1 Score', i, ':', (2*precision[i]*recall[i])/ (precision[i] + recall[i])
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
 
-		print correct, l
-		return (correct + 0.0) / l
+			return (correct + 0.0) / l
 
 def load_data(filename, count):
 	i = 0
@@ -246,13 +235,9 @@ def one_hot(x):
 	
 	return v
 
-def save_model(BRNN, epoch=0):
-	if(epoch):
-		with open('temp_models/brnn_model_%s_%s.pkl' % (TYPE, epoch), 'wb') as f:
-			dill.dump(BRNN, f)
-	else:
-		with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
-			dill.dump(BRNN, f)
+def save_model(BRNN):
+	with open('brnn_model_%s.pkl' % TYPE, 'wb') as f:
+		dill.dump(BRNN, f)
 
 def load_model():
 	with open('brnn_model_%s.pkl' % TYPE, 'rb') as f:
@@ -260,8 +245,8 @@ def load_model():
 	return BRNN
 
 if __name__ == "__main__":
-	DATA_SIZE = 20000
-	TYPE = 5
+	DATA_SIZE = 10000
+	TYPE = 3
 
 	INPUT_SIZE = 64
 	HIDDEN_SIZE = 16
@@ -311,25 +296,20 @@ if __name__ == "__main__":
 	LEARNING_RATE = 0.20
 	
 	TRAIN = False
-	RETRAIN = False
-	
+
 	BRNN = None
 	if TRAIN:
-		if(RETRAIN):
-			BRNN = load_model()
-		else:
-			BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
+		BRNN = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE)
 		BRNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS, do_dropout=True)
 		save_model(BRNN)
 	else:
 		BRNN = load_model()
-		# BRNN.predict = BiDirectionalRNN(INPUT_SIZE, HIDDEN_SIZE, OUTPUT_SIZE, learning_rate=LEARNING_RATE).predict
 
 	accuracy = BRNN.predict((testing_inputs, testing_targets), True)
 
 	print("Accuracy: {:.2f}%".format(accuracy * 100))
 
-	while False:
+	while True:
 		sentence = raw_input("Enter a sentence to parse: ")
 		phrases = parser.create_phrases(parser.create_tree(sentence))
 
