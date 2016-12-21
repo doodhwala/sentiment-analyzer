@@ -118,6 +118,9 @@ class ConvolutionalNeuralNet:
 		predictions = {x : 0 for x in range(TYPE)}
 		outputs = {x : 0 for x in range(TYPE)}
 
+		pred_pos = {x : 0 for x in range(TYPE)}
+		pred_neg = {x : 0 for x in range(TYPE)}
+
 		l = 0
 		for x, y in zip(*testing_data):
 			op = np.argmax(self.forward(x)[-1])
@@ -127,10 +130,25 @@ class ConvolutionalNeuralNet:
 			correct = correct + 1 if op == tr else correct + 0
 			l += 1
 
+			if(op == tr):
+				pred_pos[op] += 1
+			else:
+				pred_neg[op] += 1
+
 		if test:
 			print 'Outputs:\t', outputs
 			print 'Predictions:\t', predictions
-
+			precision = {}
+			recall = {}
+			for i in range(TYPE):
+				precision[i] = 1 if predictions[i] == 0 else (pred_pos[i]+0.0)/predictions[i]
+				print 'Precision', i, ':', precision[i]
+			for i in range(TYPE):
+				recall[i] = 1 if outputs[i] == 0 else (pred_pos[i]+0.0)/(outputs[i])
+				print 'Recall', i, ':', recall[i]
+			for i in range(TYPE):
+				print 'F1 Score', i, ':', (2*precision[i]*recall[i])/ (precision[i] + recall[i])
+			
 		return (correct + 0.0) / l
 
 """ ------------------------------------------------------------------------------- """
@@ -180,8 +198,8 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 200000
-	TYPE = 3
+	DATA_SIZE = 10000
+	TYPE = 5
 
 	FILTER_DIM = 3
 	NUM_FILTERS = 10
@@ -228,10 +246,10 @@ if __name__ == "__main__":
 		testing_targets.append(one_hot(ts_t[i]))
 
 	EPOCHS = 5
-	LEARNING_RATE = 0.001
+	LEARNING_RATE = 0.033
 
-	TRAIN = False
-	RETRAIN = False
+	TRAIN = True
+	RETRAIN = True
 	
 	CNN = None
 	if TRAIN:
