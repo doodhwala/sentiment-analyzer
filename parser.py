@@ -1,6 +1,8 @@
 import re
-
+import sys
 import pytreebank
+import os
+import preprocess
 from pycorenlp import StanfordCoreNLP
 
 nlp = StanfordCoreNLP('http://localhost:9000')
@@ -23,24 +25,20 @@ def get_part(string):
 	return part
 
 def create_phrases(tree_string):
-	phrases = []
-	tree_string = re.sub('\([a-zA-Z$]+ ', '(2 ', tree_string)[3:-1]
-	print tree_string
-	# tree_string = '(2 (2 (2 (2 what)) (2 (2 a) (2 cool) (2 python) (2 package))))'
-	# tree_string = '(4 (2 what) (3 (2 a) (3 (3 (3 cool) (2 python)) (2 package))))'
-
-	phrases = set()
-	for index in xrange(len(tree_string)):
-		char = tree_string[index]
-		if char == '(':
-			part = get_part(tree_string[index:])
-			# print 'part: ', part
-			phrases.add(get_phrase(part))
-	return list(phrases)
+	# java -cp "*" -mx5g edu.stanford.nlp.sentiment.BuildBinarizedDataset -input tree_string
+	#tree_string = '(2 (2 (2 Stanford) (2 University)) (2 (2 (2 is) (2 (2 located) (2 (2 in) (2 (2 (2 California) (2 .)) (2 (2 It) (2 (2 is) (2 (2 (2 (2 a) (2 (2 great) (2 university))) (2 ,)) (2 (2 founded) (2 (2 in) (2 1891)))))))))) (2 .)))'
+	with open('temp.txt', 'w') as f:
+		f.write('2 ' + tree_string)
+	os.system('java -cp "../stanford-corenlp-full-2016-10-31/*" -mx5g edu.stanford.nlp.sentiment.BuildBinarizedDataset -input temp.txt > output.txt')
+	with open('output.txt', 'r') as f:
+		tree_string = f.read()
+		# print tree_string
+		tree = pytreebank.create_tree_from_string(tree_string)
+		return tree.to_labeled_lines()
 
 def create_tree(sentence):
 	text = (sentence)
-	output = nlp.annotate(text, properties={'annotators': 'tokenize,ssplit,sentiment', 'outputFormat': 'json'})
+	output = nlp.annotate(text, properties={'annotators': 'tokenize,ssplit,sentiment', 'outputFormat': 'json', 'binaryTree': True})
 	output = output['sentences'][0]['parse'].split('\n')
 	output = [line.strip() for line in output]
 	output = ' '.join(output)
@@ -48,6 +46,5 @@ def create_tree(sentence):
 
 if __name__ == '__main__':
 	sentence = raw_input('Enter a sentence to parse: ')
-	output = create_tree(sentence)
+	output = create_phrases(sentence)
 	print output
-	print create_phrases(output)
