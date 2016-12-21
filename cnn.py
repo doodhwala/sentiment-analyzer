@@ -28,11 +28,11 @@ def clip(v):
 		return np.lib.pad(np.array(x), ((b, a), (0, 0) ), 'constant')
 
 def save_model(brnn):
-	with open('cnn_model_%s.pkl' % TYPE, 'wb') as f:
+	with open('cnn_models/cnn_model_%s.pkl' % TYPE, 'wb') as f:
 		dill.dump(brnn, f)
 
 def load_model():
-	with open('cnn_model_%s.pkl' % TYPE, 'rb') as f:
+	with open('cnn_models/cnn_model_%s.pkl' % TYPE, 'rb') as f:
 		brnn = dill.load(f)
 	return brnn
 
@@ -181,7 +181,7 @@ def one_hot(x):
 
 if __name__ == "__main__":
 	DATA_SIZE = 200000
-	TYPE = 5
+	TYPE = 3
 
 	FILTER_DIM = 3
 	NUM_FILTERS = 10
@@ -249,10 +249,4 @@ if __name__ == "__main__":
 	accuracy = CNN.predict((testing_inputs, testing_targets), True)
 
 	print("Accuracy: {:.2f}%".format(accuracy * 100))
-
-
-
-
-
-
 
