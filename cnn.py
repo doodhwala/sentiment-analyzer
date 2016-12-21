@@ -39,26 +39,25 @@ def load_model():
 """ ------------------------------------------------------------------------------- """
 
 class ConvolutionalNeuralNet:
-	def __init__(self, filter_dim, num_filters, stride, output_size, learning_rate=0.01):
-		N, h, w = (num_filters, (10 - filter_dim) / stride, (64 - filter_dim) / stride ) # result of convolution
-		self.result_shape =  (N, h / 2 + 1, w / 2 + 1) # result of pooling 
+	def __init__(self, filter_dim, num_filters, output_size, learning_rate=0.01):
+		N, h, w = (num_filters, (10 - filter_dim) + 1, (64 - filter_dim) + 1) # result of convolution
+		self.result_shape =  (N, h / 2, w / 2) # result of pooling 
 		self.filter_shape = (num_filters, filter_dim, filter_dim)
 		self.input_shape = (10, 64)
 
 		self.learning_rate = learning_rate
 		self.f = np.tanh
 		self.f_prime = lambda x: 1 - (x ** 2)
-		self.stride = stride
 		self.Wxh = np.random.randn(*self.filter_shape) * np.sqrt(2.0 / (sum(self.filter_shape)))
 		self.Why = np.random.randn(output_size, np.prod(self.result_shape)) * np.sqrt(2.0 / (np.prod(self.filter_shape) + output_size))
-		self.bh = np.zeros((h + 1, w + 1))
+		self.bh = np.zeros((num_filters, h, w))
 		self.by = np.zeros((output_size, 1))
 
 		self.mWxh, self.mWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Why)
 		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
 
 	def forward(self, x):
-		h = self.f(np.array([scipy.signal.convolve2d(x, w, mode='valid') + self.bh for w in self.Wxh]))
+		h = self.f(np.array([scipy.signal.convolve2d(x, self.Wxh[i], mode='valid') + self.bh[i] for i in range(len(self.Wxh))]))
 
 		h_prev = np.copy(h)
 		num_filters, height, width = h.shape
@@ -71,28 +70,24 @@ class ConvolutionalNeuralNet:
 
 		return h, mask, y, p
 
-	i = 0
 	def backprop(self, x, h, mask, y, dy):
-		global i
 		dWxh, dWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Why)
 		dbh, dby = np.zeros_like(self.bh), np.zeros_like(self.by)
 
-		'''		
-		delta = (t - y) * (t > 0)
-		dw = np.multiply(delta, self.x[index])
-		db = delta
-		delta = np.dot(w.T, delta) * (self.x[index].reshape(-1, 1) > 0)
-		'''
-
 		tmp = dy * self.f_prime(y)
-		dWhy -= np.multiply(tmp, h.reshape(1, -1))
-		dby -= tmp
+		dWhy = np.dot(tmp, h.reshape(-1, 1).T)
+		dby = tmp
 		dh = np.dot(self.Why.T, dy)
 		dhraw = dh * self.f_prime(h.reshape(-1, 1))
 		dhraw = dhraw.reshape(self.result_shape).repeat(2, axis=1).repeat(2, axis=2)
 		dhraw = np.multiply(dhraw, mask)
-		dWxh -= np.array([np.rot90(scipy.signal.convolve2d(x, w, 'valid')) for w in dhraw])
-		dbh -= np.mean(dhraw, axis=0)
+		dWxh = np.array([np.rot90(scipy.signal.convolve(x, np.rot90(w, 2), 'valid'), 2) for w in dhraw])
+		dbh = dhraw
+
+		#dWxh = np.zeros_like(self.Wxh)
+		#dWhy = np.zeros_like(self.Why)
+		#dbh = np.zeros_like(self.bh)
+		#dby = np.zeros_like(self.by)
 
 		for dparam in [dWxh, dWhy, dbh, dby]:
 			np.clip(dparam, -5, 5, out=dparam) # clip to mitigate exploding gradients
@@ -103,9 +98,9 @@ class ConvolutionalNeuralNet:
 		for e in range(epochs):
 			print('Epoch {}'.format(e + 1))
 
-			for x, y in zip(*training_data):
+			for x, target_y  in zip(*training_data):
 				h, mask, y, p = self.forward(x)
-				t = np.argmax(y)
+				t = np.argmax(target_y )
 				dy = p
 				dy[t] -= 1
 				dWxh, dWhy, dbh, dby = self.backprop(x, h, mask, y, dy)
@@ -190,12 +185,11 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 200000
-	TYPE = 3
+	DATA_SIZE = 23000
+	TYPE = 5
 
-	FILTER_DIM = 3
-	NUM_FILTERS = 5
-	STRIDE = 1
+	FILTER_DIM = 5
+	NUM_FILTERS = 3
 	POOL_DIM = 2
 	OUTPUT_SIZE = TYPE
 
@@ -239,13 +233,18 @@ if __name__ == "__main__":
 		testing_targets.append(one_hot(ts_t[i]))
 
 	EPOCHS = 5
-	LEARNING_RATE = 0.05
+	LEARNING_RATE = 0.005
 
 	TRAIN = True
-
+	RETRAIN = False
+	
 	CNN = None
 	if TRAIN:
-		CNN = ConvolutionalNeuralNet(FILTER_DIM, NUM_FILTERS, STRIDE, TYPE, LEARNING_RATE)
+		if(RETRAIN):
+			CNN = load_model()
+		else:
+			CNN = ConvolutionalNeuralNet(FILTER_DIM, NUM_FILTERS, TYPE, LEARNING_RATE)
+
 		CNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
 		save_model(CNN)
 	else:
