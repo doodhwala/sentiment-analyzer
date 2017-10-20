@@ -28,44 +28,62 @@ def clip(v):
 		return np.lib.pad(np.array(x), ((b, a), (0, 0) ), 'constant')
 
 def save_model(brnn):
-	with open('cnn_models/cnn_model_%s.pkl' % TYPE, 'wb') as f:
+	with open('cnn2_model_%s.pkl' % TYPE, 'wb') as f:
 		dill.dump(brnn, f)
 
 def load_model():
-	with open('cnn_models/cnn_model_%s.pkl' % TYPE, 'rb') as f:
+	with open('cnn2_model_%s.pkl' % TYPE, 'rb') as f:
 		brnn = dill.load(f)
 	return brnn
 
 """ ------------------------------------------------------------------------------- """
 
 class ConvolutionalNeuralNet:
-	def __init__(self, filter_dim, num_filters, output_size, learning_rate=0.01):
-		N, h, w = (num_filters, (10 - filter_dim) + 1, (64 - filter_dim) + 1) # result of convolution
-		self.result_shape =  (N, h / 2, w / 2) # result of pooling 
-		self.filter_shape = (num_filters, filter_dim, filter_dim)
-		self.input_shape = (10, 64)
-
+	def __init__(self, vec_size, input_dim, filter_config, output_size, learning_rate=0.01):
+		self.vec_size = vec_size
+		self.input_dim = input_dim	
+		self.num_filters = len(filter_config)
 		self.learning_rate = learning_rate
-		self.f = np.tanh
-		self.f_prime = lambda x: 1 - (x ** 2)
-		self.Wxh = np.random.randn(*self.filter_shape) * np.sqrt(2.0 / (sum(self.filter_shape)))
-		self.Why = np.random.randn(output_size, np.prod(self.result_shape)) * np.sqrt(2.0 / (np.prod(self.filter_shape) + output_size))
-		self.bh = np.zeros((num_filters, h, w))
+		self.f = relu#np.tanh
+		self.f_prime = relu_prime #lambda x: 1 - (x ** 2)
+
+		self.stride_list = [i[1] for i in filter_config]
+		self.filter_dim_list = [i[0] for i in filter_config]
+		self.result_size_list = [ (input_dim - d) / s + 1 for d, s in zip(self.filter_dim_list, self.stride_list) ]
+
+		self.Wxh = [ np.random.randn(d * vec_size) * np.sqrt(2.0 / (d * vec_size)) for d in self.filter_dim_list ]
+		self.Why = np.random.randn(output_size, self.num_filters ) * np.sqrt(2.0 / (output_size + self.num_filters))
+		self.bh = [ np.zeros(r) for r in self.result_size_list ]
 		self.by = np.zeros((output_size, 1))
 
+		self.mWxh, self.mWhy = [np.zeros_like(w) for w in self.Wxh], [np.zeros_like(w) for w in self.Why]
+		self.mbh, self.mby = np.zeros_like(self.bh), np.zeros_like(self.by) # memory variables for Adagrad	
+
 	def forward(self, x):
-		h = self.f(np.array([scipy.signal.convolve2d(x, self.Wxh[i], mode='valid') + self.bh[i] for i in range(len(self.Wxh))]))
+		h = []
+		mask = []
 
-		h_prev = np.copy(h)
-		num_filters, height, width = h.shape
-   		h = np.amax(h.reshape(num_filters, height/2, 2, width/2, 2).swapaxes(2, 3).reshape(num_filters, height/2, width/2, 4), axis=3)
+		for i in range(self.num_filters):
+			result_size = self.result_size_list[i]
+			f = self.Wxh[i]
+			b = self.bh[i]
 
-   		mask = np.equal(h_prev, h.repeat(2, axis=1).repeat(2, axis=2)).astype(int)
+			c = []
+			indices = []
+			j, k = 0, 0
+			while j < result_size:
+				c.append(np.dot(x[j : j + self.filter_dim_list[i]].reshape(-1, ), f) + b[k])
+				indices.append((j, j + self.filter_dim_list[i]))
+				k += 1
+				j += self.stride_list[i]
 
-		y = self.f(np.dot(self.Why, h.reshape(-1, 1)) + self.by)
+			h.append(np.max(c))
+			mask.append([np.argmax(c)] + list(indices[np.argmax(c)]) )
+
+		y = self.f(np.dot(self.Why, np.array(h).reshape(-1, 1)) + self.by)
 		p = np.exp(y) / np.sum(np.exp(y))
 
-		return h, mask, y, p
+		return np.array(h), np.array(mask), y, p
 
 	def backprop(self, x, h, mask, y, dy):
 		dWxh, dWhy = np.zeros_like(self.Wxh), np.zeros_like(self.Why)
@@ -76,18 +94,14 @@ class ConvolutionalNeuralNet:
 		dby = tmp
 		dh = np.dot(self.Why.T, dy)
 		dhraw = dh * self.f_prime(h.reshape(-1, 1))
-		dhraw = dhraw.reshape(self.result_shape).repeat(2, axis=1).repeat(2, axis=2)
-		dhraw = np.multiply(dhraw, mask)
-		dWxh = np.array([np.rot90(scipy.signal.convolve(x, np.rot90(w, 2), 'valid'), 2) for w in dhraw])
-		dbh = dhraw
 
-		#dWxh = np.zeros_like(self.Wxh)
-		#dWhy = np.zeros_like(self.Why)
-		#dbh = np.zeros_like(self.bh)
-		#dby = np.zeros_like(self.by)
+		for i, d in enumerate(dhraw):
+			dWxh[i] = np.dot( x[mask[i][1] : mask[i][2]].reshape(-1, 1), d.reshape(-1, 1)).reshape(-1)
+			dbh[i] = d
 
 		for dparam in [dWxh, dWhy, dbh, dby]:
-			np.clip(dparam, -5, 5, out=dparam) # clip to mitigate exploding gradients
+			for i in range(len(dparam)):
+				np.clip(dparam[i], -5, 5, out=dparam[i]) # clip to mitigate exploding gradients
 		
 		return dWxh, dWhy, dbh, dby
 		
@@ -95,10 +109,10 @@ class ConvolutionalNeuralNet:
 		for e in range(epochs):
 			print('Epoch {}'.format(e + 1))
 
-			for x, target_y  in zip(*training_data):
+			for x, target_y in zip(*training_data):
 				h, mask, y, p = self.forward(x)
-				t = np.argmax(target_y )
-				dy = p
+				t = np.argmax(target_y)
+				dy = copy.copy(p)
 				dy[t] -= 1
 				dWxh, dWhy, dbh, dby = self.backprop(x, h, mask, y, dy)
 				self.update_params(dWxh, dWhy, dbh, dby)
@@ -109,47 +123,41 @@ class ConvolutionalNeuralNet:
 
 	def update_params(self, dWxh, dWhy, dbh, dby):
 		# perform parameter update with Adagrad
-		for param, dparam in zip([self.Wxh, self.Why, self.bh, self.by],
-		                            [dWxh, dWhy, dbh, dby]):
-			param -= self.learning_rate * dparam 
+		for param, dparam, mem in zip([self.Wxh, self.Why, self.bh, self.by],
+		                            [dWxh, dWhy, dbh, dby],
+		                            [self.mWxh, self.mWhy, self.mbh, self.mby]):
+			for i in range(len(dparam)):
+				mem[i] += dparam[i] * dparam[i]
+				param[i] += -self.learning_rate * dparam[i] / np.sqrt(mem[i] + 1e-8) # adagrad update
 
 	def predict(self, testing_data, test=False):
-		correct = 0
-		predictions = {x : 0 for x in range(TYPE)}
-		outputs = {x : 0 for x in range(TYPE)}
+		if testing_data[1] == None:
+			predictions = []
+			for x in testing_data[0]:
+				op = self.forward(x)
+				predictions.append(np.argmax(y))
 
-		pred_pos = {x : 0 for x in range(TYPE)}
-		pred_neg = {x : 0 for x in range(TYPE)}
+			return predictions
 
-		l = 0
-		for x, y in zip(*testing_data):
-			op = np.argmax(self.forward(x)[-1])
-			tr = np.argmax(y)
-			predictions[op] += 1
-			outputs[tr] += 1
-			correct = correct + 1 if op == tr else correct + 0
-			l += 1
+		else:
+			correct = 0
+			predictions = {x : 0 for x in range(TYPE)}
+			outputs = {x : 0 for x in range(TYPE)}
 
-			if(op == tr):
-				pred_pos[op] += 1
-			else:
-				pred_neg[op] += 1
+			l = 0
+			for x, y in zip(*testing_data):
+				op = np.argmax(self.forward(x)[-1])
+				tr = np.argmax(y)
+				predictions[op] += 1
+				outputs[tr] += 1
+				correct = correct + 1 if op == tr else correct + 0
+				l += 1
 
-		if test:
-			print 'Outputs:\t', outputs
-			print 'Predictions:\t', predictions
-			precision = {}
-			recall = {}
-			for i in range(TYPE):
-				precision[i] = 1 if predictions[i] == 0 else (pred_pos[i]+0.0)/predictions[i]
-				print 'Precision', i, ':', precision[i]
-			for i in range(TYPE):
-				recall[i] = 1 if outputs[i] == 0 else (pred_pos[i]+0.0)/(outputs[i])
-				print 'Recall', i, ':', recall[i]
-			for i in range(TYPE):
-				print 'F1 Score', i, ':', (2*precision[i]*recall[i])/ (precision[i] + recall[i])
-			
-		return (correct + 0.0) / l
+			if test:
+				print 'Outputs:\t', outputs
+				print 'Predictions:\t', predictions
+
+			return (correct + 0.0) / l
 
 """ ------------------------------------------------------------------------------- """
 
@@ -198,11 +206,12 @@ def one_hot(x):
 	return v
 
 if __name__ == "__main__":
-	DATA_SIZE = 10000
-	TYPE = 5
+	DATA_SIZE = 3000000
+	TYPE = 3
 
-	FILTER_DIM = 3
-	NUM_FILTERS = 10
+	INPUT_SIZE = 64
+	FILTER_CONFIG = [(2, 1), (2, 2), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3), (3, 4), (4, 1), (4, 2), (4, 3), (5, 1), (5, 2), (5, 3), (5, 4)]
+	STRIDE = 1
 	POOL_DIM = 2
 	OUTPUT_SIZE = TYPE
 
@@ -245,19 +254,14 @@ if __name__ == "__main__":
 		testing_inputs.append(clip(v))
 		testing_targets.append(one_hot(ts_t[i]))
 
-	EPOCHS = 5
+	EPOCHS = 10
 	LEARNING_RATE = 0.033
 
-	TRAIN = True
-	RETRAIN = True
-	
+	TRAIN = False
+
 	CNN = None
 	if TRAIN:
-		if(RETRAIN):
-			CNN = load_model()
-		else:
-			CNN = ConvolutionalNeuralNet(FILTER_DIM, NUM_FILTERS, TYPE, LEARNING_RATE)
-
+		CNN = ConvolutionalNeuralNet(INPUT_SIZE, 10, FILTER_CONFIG, OUTPUT_SIZE, LEARNING_RATE)
 		CNN.train(training_data=(training_inputs, training_targets), validation_data=(validation_inputs, validation_targets), epochs=EPOCHS)
 		save_model(CNN)
 	else:
@@ -267,4 +271,10 @@ if __name__ == "__main__":
 	accuracy = CNN.predict((testing_inputs, testing_targets), True)
 
 	print("Accuracy: {:.2f}%".format(accuracy * 100))
+
+
+
+
+
+
 
